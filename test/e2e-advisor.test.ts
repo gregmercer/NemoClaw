@@ -54,6 +54,52 @@ function prepareTargetCheckoutScript(): string {
   return step?.run as string;
 }
 
+function resolveForkPrScript(): string {
+  const workflow = readAdvisorWorkflow();
+  const step = workflow.jobs?.advise?.steps?.find(
+    (entry) => entry.name === "Resolve fork PR from completed CI head",
+  );
+  expect(step?.run).toEqual(expect.any(String));
+  return step?.run as string;
+}
+
+function runResolveForkPr(options: { headRepo: string; headSha: string; response: unknown }) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "e2e-advisor-fork-pr-"));
+  const binDir = path.join(tmp, "bin");
+  const ghLog = path.join(tmp, "gh.log");
+  const responsePath = path.join(tmp, "response.json");
+  const githubOutput = path.join(tmp, "github-output");
+  fs.mkdirSync(binDir);
+  fs.writeFileSync(responsePath, JSON.stringify(options.response));
+  fs.writeFileSync(
+    path.join(binDir, "gh"),
+    '#!/usr/bin/env bash\nprintf \'%s\\n\' "$*" >> "$FAKE_GH_LOG"\ncat "$FAKE_GH_RESPONSE"\n',
+    { mode: 0o755 },
+  );
+  const result = spawnSync("bash", ["-c", resolveForkPrScript()], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      FAKE_GH_LOG: ghLog,
+      FAKE_GH_RESPONSE: responsePath,
+      GH_TOKEN: "test-token",
+      GITHUB_OUTPUT: githubOutput,
+      GITHUB_REPOSITORY: "NVIDIA/NemoClaw",
+      HEAD_REPO: options.headRepo,
+      HEAD_SHA: options.headSha,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      RUNNER_TEMP: tmp,
+    },
+  });
+  return {
+    ...result,
+    cleanup: () => fs.rmSync(tmp, { recursive: true, force: true }),
+    ghCalls: fs.existsSync(ghLog) ? fs.readFileSync(ghLog, "utf8") : "",
+    githubOutput: fs.existsSync(githubOutput) ? fs.readFileSync(githubOutput, "utf8") : "",
+  };
+}
+
 function runPrepareTargetCheckout(env: {
   TARGET_REPO: string;
   TARGET_PR: string;
@@ -213,6 +259,47 @@ describe("E2E recommendation advisor prompt", () => {
     );
   });
 
+  it("resolves one exact fork PR from paginated open pull requests", () => {
+    const headSha = "0123456789abcdef0123456789abcdef01234567";
+    const result = runResolveForkPr({
+      headRepo: "contributor/NemoClaw",
+      headSha,
+      response: [
+        [
+          {
+            number: 42,
+            head: { sha: headSha, repo: { full_name: "contributor/NemoClaw" } },
+            base: { ref: "main", repo: { full_name: "NVIDIA/NemoClaw" } },
+          },
+        ],
+      ],
+    });
+    try {
+      expect(result.status).toBe(0);
+      expect(result.ghCalls).toContain(
+        "api --paginate --slurp -X GET -H Accept: application/vnd.github+json /repos/NVIDIA/NemoClaw/pulls -f state=open -f per_page=100",
+      );
+      expect(result.githubOutput).toBe("pr_number=42\nbase_ref=main\n");
+    } finally {
+      result.cleanup();
+    }
+  });
+
+  it("fails closed when the completed CI head does not identify one fork PR", () => {
+    const result = runResolveForkPr({
+      headRepo: "contributor/NemoClaw",
+      headSha: "0123456789abcdef0123456789abcdef01234567",
+      response: [[]],
+    });
+    try {
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("Expected exactly one open fork PR");
+      expect(result.githubOutput).toBe("");
+    } finally {
+      result.cleanup();
+    }
+  });
+
   it("validates manual target checkout inputs before git fetch", () => {
     const invalidCases = [
       {
@@ -254,7 +341,7 @@ describe("E2E recommendation advisor prompt", () => {
         "-C /tmp/e2e-advisor-target fetch --no-tags target pull/5756/head:refs/remotes/target/pr-5756",
         "-C /tmp/e2e-advisor-target checkout --detach refs/remotes/target/pr-5756",
       ]);
-      expect(valid.githubEnv).toBe("ADVISOR_WORKDIR=/tmp/e2e-advisor-target\n");
+      expect(valid.githubEnv).toBe("ADVISOR_WORKDIR=/tmp/e2e-advisor-target\nPR_NUMBER=5756\n");
     } finally {
       valid.cleanup();
     }
