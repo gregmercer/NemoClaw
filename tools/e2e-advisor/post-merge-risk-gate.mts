@@ -79,6 +79,7 @@ export type RiskGateState = {
   expectedJobs: string[];
   expectedShards: Record<string, string[]>;
   requiresManualExpansion: boolean;
+  prNumber?: number;
 };
 
 export type RiskEvidenceVerdict = {
@@ -218,6 +219,12 @@ export function validateRiskGateState(value: unknown): RiskGateState {
   }
   if (typeof value.requiresManualExpansion !== "boolean") {
     throw new Error("risk-gate manual-expansion state is invalid");
+  }
+  if (
+    value.prNumber !== undefined &&
+    (!Number.isSafeInteger(value.prNumber) || (value.prNumber as number) < 1)
+  ) {
+    throw new Error("risk-gate PR number is invalid");
   }
   return value as RiskGateState;
 }
@@ -415,17 +422,18 @@ function appendOutput(name: string, value: string): void {
   }
 }
 
-async function createCheck(
+export async function createCheck(
   repository: string,
   token: string,
   headSha: string,
   title: string,
   summary: string,
+  checkName = CHECK_NAME,
 ): Promise<number> {
   const check = await githubApi<CheckRun>(`repos/${repository}/check-runs`, token, {
     method: "POST",
     body: {
-      name: CHECK_NAME,
+      name: checkName,
       head_sha: headSha,
       status: "in_progress",
       output: { title, summary },
@@ -437,7 +445,7 @@ async function createCheck(
   return check.id;
 }
 
-async function completeCheck(
+export async function completeCheck(
   context: { repository: string; checkRunId: number },
   token: string,
   verdict: RiskEvidenceVerdict,
@@ -487,6 +495,7 @@ export function changedFilesBetween(
   baseSha: string,
   commitSha: string,
   workspace = process.cwd(),
+  requireCheckedOutCommit = true,
 ): string[] {
   if (!SHA_PATTERN.test(baseSha) || !SHA_PATTERN.test(commitSha)) {
     throw new Error("base and tested commits must be lowercase 40-character SHAs");
@@ -496,7 +505,7 @@ export function changedFilesBetween(
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
-  if (checkedOutSha !== commitSha) {
+  if (requireCheckedOutCommit && checkedOutSha !== commitSha) {
     throw new Error("trusted controller checkout does not match the tested commit");
   }
   const output = execFileSync(
@@ -583,6 +592,7 @@ export async function dispatchRiskWorkflow(options: {
   commitSha: string;
   planHash: string;
   correlationId: string;
+  prNumber?: number;
 }): Promise<number> {
   if (
     !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(options.repository) ||
@@ -593,7 +603,9 @@ export async function dispatchRiskWorkflow(options: {
     options.jobs.some((job) => !JOB_PATTERN.test(job)) ||
     !SHA_PATTERN.test(options.commitSha) ||
     !HASH_PATTERN.test(options.planHash) ||
-    !CORRELATION_PATTERN.test(options.correlationId)
+    !CORRELATION_PATTERN.test(options.correlationId) ||
+    (options.prNumber !== undefined &&
+      (!Number.isSafeInteger(options.prNumber) || options.prNumber < 1))
   ) {
     throw new Error("risk workflow dispatch inputs are invalid");
   }
@@ -610,6 +622,8 @@ export async function dispatchRiskWorkflow(options: {
           risk_plan_hash: options.planHash,
           risk_correlation: options.correlationId,
           risk_shadow: "true",
+          risk_pr: options.prNumber ? "true" : "false",
+          pr_number: options.prNumber ? String(options.prNumber) : "",
         },
         // GitHub REST 2022-11-28 otherwise returns no run identity.
         return_run_details: true,
@@ -799,7 +813,10 @@ export async function finishRiskGate(options: {
       child.event !== "workflow_dispatch" ||
       !SHA_PATTERN.test(child.head_sha) ||
       child.html_url !== childRunUrl ||
-      child.display_title !== `E2E risk ${state.correlationId}`
+      child.display_title !==
+        (state.prNumber
+          ? `E2E PR #${state.prNumber} risk ${state.correlationId}`
+          : `E2E risk ${state.correlationId}`)
     ) {
       throw new Error("correlated E2E workflow identity changed");
     }
