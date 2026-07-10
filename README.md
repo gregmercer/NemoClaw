@@ -54,6 +54,21 @@ bash install.sh
 
 This runs the same interactive onboarding as the hosted installer, using the fork's source instead of downloading it.
 
+#### Update the Fork with the Latest Upstream Changes
+
+Yes — you can keep this fork current with the original `NVIDIA/NemoClaw` repository. From your local clone of the fork, add the upstream repository as a remote once, then pull its latest changes whenever you want to update:
+
+```bash
+# One-time: register the original NVIDIA repository as "upstream"
+git remote add upstream https://github.com/NVIDIA/NemoClaw.git
+
+# Each time you want the latest upstream changes:
+git fetch upstream
+git merge upstream/main   # or: git rebase upstream/main
+```
+
+Resolve any merge conflicts if upstream changed the same files as this fork, then re-run `bash install.sh` to rebuild the CLI with the updates.
+
 ## Documentation
 
 Refer to the following pages on the official documentation website for more information on NemoClaw.
