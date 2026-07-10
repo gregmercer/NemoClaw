@@ -41,6 +41,19 @@ For Hermes, set `NEMOCLAW_AGENT=hermes` before running the installer, or use the
 | Hermes | [Quickstart with Hermes](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart-hermes.html) |
 | LangChain Deep Agents Code | [Quickstart with LangChain Deep Agents Code](https://docs.nvidia.com/nemoclaw/latest/user-guide/deepagents/get-started/quickstart.html) |
 
+### Install This Forked Version
+
+The hosted one-liner installer always pulls from the upstream `NVIDIA/NemoClaw` repository, so it cannot install this fork. To install the changes on this fork, clone it locally and run its installer. The installer detects the local source checkout and builds and links the CLI directly from it:
+
+```bash
+git clone -b gpt-5.4-managed-inference-max-tokens \
+  https://github.com/gregmercer/NemoClaw.git nemoclaw-fork
+cd nemoclaw-fork
+bash install.sh
+```
+
+This runs the same interactive onboarding as the hosted installer, using the fork's source instead of downloading it.
+
 ## Documentation
 
 Refer to the following pages on the official documentation website for more information on NemoClaw.
