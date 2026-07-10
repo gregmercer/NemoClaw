@@ -41,6 +41,15 @@ For Hermes, set `NEMOCLAW_AGENT=hermes` before running the installer, or use the
 | Hermes | [Quickstart with Hermes](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart-hermes.html) |
 | LangChain Deep Agents Code | [Quickstart with LangChain Deep Agents Code](https://docs.nvidia.com/nemoclaw/latest/user-guide/deepagents/get-started/quickstart.html) |
 
+### Why This Fork Exists
+
+This fork adds support for running **gpt-5.4 through a custom (OpenAI-compatible) inference provider**. OpenAI's GPT-5 family — and Azure OpenAI's equivalent deployments — reject the legacy `max_tokens` parameter on the Chat Completions route and require `max_completion_tokens` instead, returning `HTTP 400: Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.` As a result, agent turns fail out of the box when pointing OpenClaw at gpt-5.4 on a custom provider.
+
+The fork resolves this by:
+
+- Adding a shared resolver (`src/lib/inference/max-tokens-field.ts`) that picks `max_completion_tokens` for GPT-5 and o-series models (`o1`/`o3`/`o4`) and `max_tokens` for everything else, so the host onboarding probe and the in-sandbox smoke check stay in agreement.
+- Adding a model-specific setup manifest (`nemoclaw-blueprint/model-specific-setup/openclaw/gpt-5.4-managed-inference.json`) that routes OpenClaw's reply budget to `max_completion_tokens` for gpt-5.4 on the managed inference route.
+
 ### Install This Forked Version
 
 The hosted one-liner installer always pulls from the upstream `NVIDIA/NemoClaw` repository, so it cannot install this fork. To install the changes on this fork, clone it locally and run its installer. The installer detects the local source checkout and builds and links the CLI directly from it:
