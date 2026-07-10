@@ -1230,6 +1230,22 @@ describe("generate-openclaw-config.mts: config generation", () => {
     expect(config.tools?.toolSearch).toBe(false);
   });
 
+  it("routes gpt-5.4 reply budget to max_completion_tokens on managed inference (#6470)", () => {
+    const config = runConfigScript({
+      NEMOCLAW_MODEL: "gpt-5.4",
+      NEMOCLAW_PROVIDER_KEY: "inference",
+      NEMOCLAW_PRIMARY_MODEL_REF: "inference/gpt-5.4",
+      NEMOCLAW_INFERENCE_BASE_URL: "https://inference.local/v1",
+      NEMOCLAW_INFERENCE_API: "openai-completions",
+      NEMOCLAW_INFERENCE_COMPAT_B64: Buffer.from("null").toString("base64"),
+    });
+
+    expect(config.models.providers.inference.models[0].compat).toEqual({
+      maxTokensField: "max_completion_tokens",
+    });
+    expect(config.agents.defaults.model.primary).toBe("inference/gpt-5.4");
+  });
+
   it("adds registry compat when the incoming compat blob is null", () => {
     const config = runConfigScript({
       NEMOCLAW_MODEL: "moonshotai/kimi-k2.6",

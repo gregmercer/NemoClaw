@@ -321,6 +321,16 @@ describe("OpenAI-compatible inference probes", () => {
     });
   });
 
+  it("uses max_completion_tokens for GPT-5 family and reasoning models (#6470)", () => {
+    for (const model of ["gpt-5.4", "azure/gpt-5.4", "o3-mini", "o1"]) {
+      expect(getChatCompletionsProbePayload(model)).toEqual({
+        model,
+        messages: [{ role: "user", content: "Reply with exactly: OK" }],
+        max_completion_tokens: 8,
+      });
+    }
+  });
+
   it("allows onboard validation max-time to be raised from the environment", () => {
     const original = process.env.NEMOCLAW_ONBOARD_VALIDATION_TIMEOUT_SECONDS;
     process.env.NEMOCLAW_ONBOARD_VALIDATION_TIMEOUT_SECONDS = "300";
